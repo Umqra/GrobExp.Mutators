@@ -14,6 +14,35 @@ namespace Mutators.Tests
 {
     public class TestMigration : TestBase
     {
+        public class TestDataSourceWithArray
+        {
+            public string[] Values { get; set; }
+        }
+
+        public class TestDataTargetWithArray
+        {
+            public string Value { get; set; }
+        }
+
+        // todo (sivukhin, 29.08.2018): Add more tests 
+        // todo (sivukhin, 29.08.2018): Add bug description
+        [Test]
+        public void TestConvertationOfArrayElement()
+        {
+            var converterCollection = new TestConverterCollection<TestDataTargetWithArray, TestDataSourceWithArray>(
+                pathFormatterCollection,
+                configurator => configurator.Target(target => target.Values[0]).Set(source => source.Value));
+            var configuratorCollection = new TestDataConfiguratorCollection<TestDataSourceWithArray>(
+                null, null, pathFormatterCollection,
+                configurator => configurator.Target(data => data.Values).RequiredIf(data => false, data => null));
+            var mutatorsTree = configuratorCollection.GetMutatorsTree(MutatorsContext.Empty);
+            var migratedTree = converterCollection.Migrate(mutatorsTree, MutatorsContext.Empty);
+
+            var mutatorWithPath = migratedTree.GetAllMutatorsWithPaths().Single();
+            ((RequiredIfConfiguration)mutatorWithPath.Mutator).Condition.Compile();
+            ((RequiredIfConfiguration)mutatorWithPath.Mutator).Message.Compile();
+        }
+
         [Test]
         public void TestProperty()
         {
