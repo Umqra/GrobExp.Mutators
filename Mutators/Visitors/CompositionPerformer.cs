@@ -276,7 +276,11 @@ namespace GrobExp.Mutators.Visitors
             return Expression.NewArrayInit(elementType, new int[maxIndex + 1].Select((x, i) =>
                 {
                     var item = node[i];
-                    return item == null ? Expression.Default(elementType) : Construct(elementType, (Hashtable)item);
+                    if (item == null)
+                        return Expression.Default(elementType);
+                    if (item is Hashtable hashtable)
+                        return Construct(elementType, hashtable);
+                    return Expression.Convert((Expression)item, elementType);
                 }));
         }
 
