@@ -498,28 +498,33 @@ namespace GrobExp.Mutators.Visitors
             return result;
         }
 
-        private static bool IsSimpleLinkOfChain(MethodCallExpression node, out Type type)
-        {
-            type = null;
-            return node != null && ((node.Method.IsCurrentMethod() || node.Method.IsEachMethod() || node.Method.IsTemplateIndexMethod() || node.Method.IsWhereMethod()) && IsSimpleLinkOfChain(node.Arguments.First(), out type)
-                                    || (node.Method.IsIndexerGetter() && IsSimpleLinkOfChain(node.Object, out type)));
-        }
-
-        private static bool IsSimpleLinkOfChain(MemberExpression node, out Type type)
-        {
-            type = null;
-            return node != null && node.Member != stringLengthProperty && IsSimpleLinkOfChain(node.Expression, out type);
-        }
-
         private static bool IsSimpleLinkOfChain(Expression node, out Type type)
         {
             type = null;
-            if (node != null && node.NodeType == ExpressionType.Parameter)
+            if (node == null)
+                return false;
+            if (node.NodeType == ExpressionType.Parameter)
+            {
                 type = node.Type;
-            return node != null && (node.NodeType == ExpressionType.Parameter
-                                    || IsSimpleLinkOfChain(node as MemberExpression, out type)
-                                    || (node.NodeType == ExpressionType.ArrayIndex && IsSimpleLinkOfChain(((BinaryExpression)node).Left, out type))
-                                    || IsSimpleLinkOfChain(node as MethodCallExpression, out type));
+                return true;
+            }
+            if (node is MemberExpression memberExpression)
+            {
+                return memberExpression.Member != stringLengthProperty && IsSimpleLinkOfChain(memberExpression.Expression, out type);
+            }
+            if (node is BinaryExpression binaryExpression && node.NodeType == ExpressionType.ArrayIndex)
+            {
+                return IsSimpleLinkOfChain(binaryExpression.Left, out type);
+            }
+            if (node is MethodCallExpression methodCallExpression)
+            {
+                var method = methodCallExpression.Method;
+                if (method.IsCurrentMethod() || method.IsEachMethod() || method.IsTemplateIndexMethod() || method.IsWhereMethod())
+                    return IsSimpleLinkOfChain(methodCallExpression.Arguments.First(), out type);
+                if (method.IsIndexerGetter())
+                    return IsSimpleLinkOfChain(methodCallExpression.Object, out type);
+            }
+            return false;
         }
 
         private Type From { get; set; }
