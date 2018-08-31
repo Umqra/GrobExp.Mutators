@@ -340,19 +340,14 @@ namespace GrobExp.Mutators.Visitors
                 onlyLeavesAreConvertible = true;
                 if (node.Type.IsArray /* || node.Type.IsDictionary()*/)
                 {
-                    var arrays = convertationNode.GetArrays();
-                    Expression array;
-                    if (arrays.TryGetValue(To, out array) && array != null)
+                    if (convertationNode.GetArrays().TryGetValue(To, out var array) && array != null)
                     {
-                        var arrayItemConvertationNode = convertationNode.GotoEachArrayElement(false);
-                        if (arrayItemConvertationNode != null)
+                        var arrayItemConvertationNode = convertationNode.GotoEachArrayElement(create : false);
+                        var elementsSetter = arrayItemConvertationNode?.GetMutators().OfType<EqualsToConfiguration>().SingleOrDefault();
+                        if (elementsSetter != null)
                         {
-                            var setter = (EqualsToConfiguration)arrayItemConvertationNode.GetMutators().SingleOrDefault(mutator => mutator is EqualsToConfiguration);
-                            if (setter != null)
-                            {
-                                var convertedArray = ConvertArray(array, setter.Value.Body);
-                                return new List<KeyValuePair<Expression, Expression>> {new KeyValuePair<Expression, Expression>(convertedArray, null)};
-                            }
+                            var convertedArray = ReplaceCurrentMethodWithSelect(elementsSetter.Value.Body, array);
+                            return new List<KeyValuePair<Expression, Expression>> {new KeyValuePair<Expression, Expression>(convertedArray, null)};
                         }
 
                         return new List<KeyValuePair<Expression, Expression>> {new KeyValuePair<Expression, Expression>(array, null)};
@@ -426,14 +421,18 @@ namespace GrobExp.Mutators.Visitors
             return result;
         }
 
-        private static Expression ConvertArray(Expression array, Expression expression)
+        /// <summary>
+        /// Transform expression with .Current() method to simple LINQ chain with .Select()
+        /// For example: ConvertArray(x.Arrays, x.Arrays.Current().Field) => x.Arrays.Select(y => y.Field).ToArray()
+        /// </summary>
+        private static Expression ReplaceCurrentMethodWithSelect(Expression expression, Expression array)
         {
-            var itemType = array.Type.GetItemType();
-            var parameter = Expression.Parameter(itemType);
-            expression = expression.ResolveAliases(new List<KeyValuePair<Expression, Expression>> {new KeyValuePair<Expression, Expression>(parameter, Expression.Call(MutatorsHelperFunctions.CurrentMethod.MakeGenericMethod(itemType), array))});
             if (expression.NodeType == ExpressionType.Parameter)
                 return array;
-            Expression select = Expression.Call(selectMethod.MakeGenericMethod(itemType, expression.Type), array, Expression.Lambda(expression, parameter));
+            var arrayItemType = array.Type.GetItemType();
+            var parameter = Expression.Parameter(arrayItemType);
+            expression = expression.ResolveAliases(new List<KeyValuePair<Expression, Expression>> {new KeyValuePair<Expression, Expression>(parameter, Expression.Call(MutatorsHelperFunctions.CurrentMethod.MakeGenericMethod(arrayItemType), array))});
+            Expression select = Expression.Call(selectMethod.MakeGenericMethod(arrayItemType, expression.Type), array, Expression.Lambda(expression, parameter));
             return Expression.Call(toArrayMethod.MakeGenericMethod(expression.Type), select);
         }
 
@@ -471,13 +470,6 @@ namespace GrobExp.Mutators.Visitors
             return exp;
         }
 
-        private static Expression ConvertToNullable(Expression expression, Type type)
-        {
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-                return Expression.Convert(expression, type);
-            return expression;
-        }
-
         private Expression ResolveChain(Expression node)
         {
             var conditionalSetters = GetConditionalSetters(node);
@@ -496,6 +488,13 @@ namespace GrobExp.Mutators.Visitors
             }
 
             return result;
+        }
+
+        private static Expression ConvertToNullable(Expression expression, Type type)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+                return Expression.Convert(expression, type);
+            return expression;
         }
 
         private static bool IsSimpleLinkOfChain(Expression node, out Type type)
